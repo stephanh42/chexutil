@@ -1,7 +1,7 @@
 # chexutil
 C++ accelerated classes and functions to deal with hexagonal grids. 
 
-![Screenshot of example.py](img/screenshot.png)
+![Screenshot of chex\_example.py](img/screenshot.png)
 
 ## Introduction
 
@@ -13,7 +13,7 @@ This module provides the following functionality.
 4. A\* path-finding on a hexagonal grid.
 
 All this is provided by the module `hexutil`.
-The file [example.py](example.py) contains example coding using this functionality.
+The file [chex\_example.py](chex_example.py) contains example coding using this functionality.
 The above image is a screenshot from this example.
 
 ## Manipulation of grid coordinates in a hexagonal grid.
