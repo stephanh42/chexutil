@@ -9,9 +9,15 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import sys
 import setuptools
+from os import path
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
+here = path.abspath(path.dirname(__file__))
+
+# Get the long description from the README file
+with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
+    long_description = f.read()
 
 class get_pybind_include(object):
     """Helper class to determine the pybind11 include path
@@ -101,7 +107,7 @@ setup(
     author_email='stephanh42@gmail.com',
     url='https://github.com/stephanh42/chexutil',
     description='C++ accelerated classes and functions to deal with hexagonal grids.',
-    long_description='',
+    long_description=long_description,
     ext_modules=ext_modules,
     install_requires=['pybind11>=2.2'],
     cmdclass={'build_ext': BuildExt},
