@@ -424,6 +424,17 @@ py::tuple make_rotations()
 }
 
 template <class R, class F>
+R &find_or_create(std::unordered_map<Hex, R> &map, const Hex &hex, F &f)
+{
+  std::pair<typename std::unordered_map<Hex, R>::iterator, bool> p = 
+    map.insert(typename std::unordered_map<Hex, R>::value_type(hex, R()));
+  if (p.second) {
+    p.first->second = f(hex);
+  }
+  return p.first->second;
+}
+
+template <class R, class F>
 class HexCache
 {
   public:
@@ -431,13 +442,7 @@ class HexCache
 
     R operator()(const Hex &hex)
     {
-      typename std::unordered_map<Hex, R>::iterator it = m_cache.find(hex);
-      if (it != m_cache.end()) {
-	return it->second;
-      }
-      R result = m_f(hex);
-      m_cache[hex] = result;
-      return result;
+      return find_or_create<R>(m_cache, hex, m_f);
     }
 
   private:
@@ -605,7 +610,12 @@ class HexPathFinder {
     bool done;
     std::vector<Hex> path;
 
-    typedef std::function<bool(Hex)> PassableFunction;
+    struct HexInfo {
+      bool passable;
+      double cost;
+    };
+
+    typedef std::unordered_map<Hex,HexInfo> HexInfoMap;
     typedef std::function<double(Hex)> CostFunction;
 
   private:
@@ -613,6 +623,7 @@ class HexPathFinder {
     Hex m_destination;
     py::function m_passable;
     CostFunction m_cost;
+    HexInfoMap m_hex_info_map;
 
     struct OpenItem {
       double cost_so_far;
@@ -620,7 +631,6 @@ class HexPathFinder {
       HexPath::Ptr path;
     };
 
-    std::unordered_set<Hex> m_closed;
     std::map<double, std::vector<OpenItem> > m_open;
 
     void add_to_open_set(const OpenItem &item)
@@ -669,6 +679,17 @@ class HexPathFinder {
       return PyObject_IsTrue(m_passable(py::cast(hex)).ptr());
     }
 
+    HexInfo &get_hex_info(const Hex &hex)
+    {
+      auto func = [this](const Hex &hex) {
+	HexInfo result;
+	result.passable = is_passable(hex);
+	result.cost = result.passable ? m_cost(hex) : 0.0;
+	return result;
+      };
+      return find_or_create(m_hex_info_map, hex, func);
+    }
+
     HexPathFinder(const Hex &start, const Hex &destination, py::function passable, py::object cost)
     : found(false), done(false),
       m_start(start),
@@ -677,6 +698,7 @@ class HexPathFinder {
       m_cost(makeCostFunction(cost))
     {
       add_to_open_set(OpenItem{0.0, start, nullptr});
+      m_hex_info_map[start] = HexInfo{true, 0.0};
     }
 
     std::vector<Hex> compute_path(HexPath::Ptr path) const
@@ -702,9 +724,10 @@ class HexPathFinder {
           done = true;
           return;
         }
-        if (m_closed.find(current.position) != m_closed.end()) {
-          continue;
-        }
+	HexInfo &info = get_hex_info(current.position);
+	if (!info.passable) {
+	  continue;
+	}
         HexPath::Ptr new_path = std::make_shared<HexPath>(HexPath(current.position, current.path));
 
         if (current.position == m_destination) {
@@ -713,14 +736,15 @@ class HexPathFinder {
           m_open.clear();
           return;
         }
-        m_closed.insert(current.position);
+	info.passable = false;
 
         for (const Hex &delta : Hex::orig_neighbours) {
           Hex new_pos = current.position + delta;
-          if (!is_passable(new_pos) || (m_closed.find(new_pos) != m_closed.end())) {
+	  HexInfo new_info = get_hex_info(new_pos);
+          if (!new_info.passable) {
             continue;
           }
-          double new_cost = current.cost_so_far + m_cost(new_pos);
+          double new_cost = current.cost_so_far + new_info.cost;
           add_to_open_set(OpenItem{new_cost, new_pos, new_path});
         }
       }
