@@ -1,5 +1,7 @@
 import unittest
 import chexutil
+import pickle
+import math
 
 class HexMap(object):
     def __init__(self, str):
@@ -231,6 +233,8 @@ class TestHexGrid(unittest.TestCase):
             l = [chexutil.Hex(x, y) for y in range(y1, y2) for x in range(x1, x2) if (x + y) % 2 == 0]
             self.assertEqual(list(r), l)
 
+    def test_hex_factor(self):
+        self.assertEqual(chexutil.hex_factor, math.sqrt(1.0/3.0))
 
 class TestFov(unittest.TestCase):
     def test_fov1(self):
@@ -247,6 +251,24 @@ class TestPathFinding(unittest.TestCase):
     def test_path2(self):
         path = frozenset(testmap2.player.find_path(testmap2.target, testmap2.is_passable)[:-1])
         self.assertEqual(testmap2.get_map(path=path), testmap2.source)
+
+class TextRect(unittest.TestCase):
+    def test_rect1(self):
+        self.assertEqual(chexutil.Rectangle(4, 5).translated(1, 2), chexutil.Rectangle(1, 2, 4, 5))
+
+    def test_union(self):
+        R = chexutil.Rectangle
+        self.assertEqual(R(1, 2, 3, 4) | R(4, 5, 1, 2), R(1, 2, 4, 5))
+
+    def test_intersect(self):
+        R = chexutil.Rectangle
+        self.assertEqual(R(1, 2, 3, 4) & R(4, 5, 1, 2), R(0, 0, 0, 0))
+        self.assertEqual(R(1, 2, 5, 6) & R(4, 5, 1, 2), R(4, 5, 1, 2))
+
+class TestPickle(unittest.TestCase):
+    def test_pickle(self):
+        for obj in [chexutil.Hex(1, 3), chexutil.Rectangle(1, 2, 3, 4)]:
+            self.assertEqual(obj, pickle.loads(pickle.dumps(obj)))
 
 if __name__ == '__main__':
     unittest.main()

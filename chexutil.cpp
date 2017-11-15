@@ -340,9 +340,9 @@ struct HexRange
 std::array<Hex, 6> origin_corners = {{Hex(1, 1), Hex(0, 2), Hex(-1, 1), Hex(-1, -1), Hex(0, -2), Hex(1, -1)}};
 
 class HexGrid {
+  public:
     static const double hex_factor;
 
-  public:
     HexGrid(int w, int h) : width(w), height(h) {}
     HexGrid(int w) : width(w), height(static_cast<int>(std::round(w * hex_factor))) {}
 
@@ -938,4 +938,6 @@ swap x and y coordinates everywhere.
     .def("hexes_in_rectangle", &HexGrid::hexes_in_rectangle, py::arg("rectangle"),
         "Return a sequence with the hex coordinates in the rectangle.")
     ;
- }
+
+    m.attr("hex_factor") = HexGrid::hex_factor;
+}
