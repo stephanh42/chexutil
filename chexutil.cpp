@@ -11,6 +11,8 @@
 #include <cmath>
 #include <memory>
 #include <unordered_set>
+#include <unordered_map>
+#include <cstdint>
 #include <map>
 
 namespace py = pybind11;
@@ -241,6 +243,30 @@ struct Rectangle {
   }
 };
 
+// custom specialization of std::hash can be injected in namespace std
+namespace std
+{
+  template<> struct hash<Hex>
+  {
+    typedef Hex argument_type;
+    typedef std::size_t result_type;
+    result_type operator()(const argument_type& hex) const
+    {
+      return (hex.x >> 1) + (hex.y * 2738050981);
+    }
+  };
+
+  template<> struct hash<Rectangle>
+  {
+    typedef Rectangle argument_type;
+    typedef std::size_t result_type;
+    result_type operator()(const argument_type& rect) const
+    {
+      return rect.x + rect.y * 414353063 + rect.width * 371838251 + rect.height * 750515191;
+    }
+  };
+}
+
 struct HexIterator
 {
   typedef int Sentinel;
@@ -397,6 +423,28 @@ py::tuple make_rotations()
   return py::tuple(result);
 }
 
+template <class R, class F>
+class HexCache
+{
+  public:
+    HexCache(F &f) : m_f(f) {}
+
+    R operator()(const Hex &hex)
+    {
+      typename std::unordered_map<Hex, R>::iterator it = m_cache.find(hex);
+      if (it != m_cache.end()) {
+	return it->second;
+      }
+      R result = m_f(hex);
+      m_cache[hex] = result;
+      return result;
+    }
+
+  private:
+    std::unordered_map<Hex, R> m_cache;
+    F &m_f;
+};
+
 class FovTree 
 {
   private:
@@ -415,6 +463,8 @@ class FovTree
     int m_distance;
 
   public:
+    typedef std::unordered_map<Hex, std::uint8_t> VisibleMap;
+
     FovTree(const Hex &hexagon, unsigned direction, double angle1, double angle2)
     : m_has_cached_successors(false),
       m_hexagon(hexagon), m_angle1(angle1), m_angle2(angle2), m_direction(direction),
@@ -432,23 +482,24 @@ class FovTree
       return (3*m_hexagon.y + corner.y)/double(m_hexagon.x + corner.x);
     }
 
-    static const unsigned all_directions;
+    static const std::uint8_t all_directions;
 
-    void field_of_view(const Hex &offset, unsigned direction, const py::function &transparent, int max_distance, 
-        py::dict &visible, py::function &visible_get)
+    template <class T>
+    void field_of_view(const Hex &offset, unsigned direction, T &transparent, int max_distance, 
+		    VisibleMap &visible)
     {
       if (m_distance > max_distance) {
         return;
       }
-      py::object hexagon = py::cast(offset + m_hexagons[direction]);
-      if (PyObject_IsTrue(transparent(hexagon).ptr())) {
+      Hex hexagon = offset + m_hexagons[direction];
+      if (transparent(hexagon)) {
         visible[hexagon] = all_directions;
         for (FovTree &succ : successors()) {
-          succ.field_of_view(offset, direction, transparent, max_distance, visible, visible_get);
+          succ.field_of_view(offset, direction, transparent, max_distance, visible);
         }
       } else {
         int directions = 1 << ((m_direction + direction) % 6);
-        visible[hexagon] = directions | visible_get(hexagon, 0).cast<int>();
+        visible[hexagon] |= directions;
       }
     }
 
@@ -473,7 +524,7 @@ class FovTree
     }
 };
 
-const unsigned FovTree::all_directions = (1 << 6) - 1;
+const std::uint8_t FovTree::all_directions = (1 << 6) - 1;
 const std::array<Hex, 4> FovTree::corners = {{Hex(0, -2), Hex(1, -1), Hex(1, 1), Hex(0, 2)}};
 const std::array<Hex, 3> FovTree::neighbours = {{Hex(1, -1), Hex(2, 0), Hex(1, 1)}};
 
@@ -500,37 +551,30 @@ py::dict field_of_view(const Hex &hex, py::function transparent, int max_distanc
 {
   static FovTree fovtree(Hex(2, 0), 0, -1.0, 1.0);
 
-  py::dict visible_dict = visible.is_none() ? py::dict() : visible.cast<py::dict>();
-  visible_dict[py::cast(hex)] = FovTree::all_directions;
+  bool new_dict = visible.is_none();
+  py::dict visible_dict = new_dict ? py::dict() : visible.cast<py::dict>();
   py::function visible_get = visible_dict.attr("get").cast<py::function>();
+
+  FovTree::VisibleMap visible_map;
+  visible_map[hex] = FovTree::all_directions;
+
+  auto transparent_f = [transparent](const Hex &hexagon) { return PyObject_IsTrue(transparent(py::cast(hexagon)).ptr()); };
+  HexCache<bool, decltype(transparent_f)> transparent_cache(transparent_f);
+
   for (unsigned direction = 0; direction < 6; direction++) {
-    fovtree.field_of_view(hex, direction, transparent, max_distance, visible_dict, visible_get);
+    fovtree.field_of_view(hex, direction, transparent_cache, max_distance, visible_map);  
   }
+
+  for (FovTree::VisibleMap::iterator it = visible_map.begin(); it != visible_map.end(); ++it) {
+    py::object pyhex = py::cast(it->first);
+    if (it->second == FovTree::all_directions) {
+      visible_dict[pyhex] = FovTree::all_directions;
+    } else {
+      visible_dict[pyhex] = it->second | (new_dict ? 0 : visible_get(pyhex, 0).cast<int>());
+    }
+  }
+
   return visible_dict;
-}
-
-// custom specialization of std::hash can be injected in namespace std
-namespace std
-{
-  template<> struct hash<Hex>
-  {
-    typedef Hex argument_type;
-    typedef std::size_t result_type;
-    result_type operator()(const argument_type& hex) const
-    {
-      return (hex.x >> 1) + (hex.y * 2738050981);
-    }
-  };
-
-  template<> struct hash<Rectangle>
-  {
-    typedef Rectangle argument_type;
-    typedef std::size_t result_type;
-    result_type operator()(const argument_type& rect) const
-    {
-      return rect.x + rect.y * 414353063 + rect.width * 371838251 + rect.height * 750515191;
-    }
-  };
 }
 
 const char *HexPathFinder_doc =
