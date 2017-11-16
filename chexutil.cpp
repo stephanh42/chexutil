@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/operators.h>
 #include <pybind11/functional.h>
+#include <pybind11/numpy.h>
 
 #include <string>
 #include <vector>
@@ -775,6 +776,36 @@ find_path(const Hex &start, const Hex &destination, py::function passable, py::o
   return pathFinder.path;
 }
 
+template <class T>
+struct AllocatedArray
+{
+  T *ptr;
+  py::capsule free_when_done;
+
+  AllocatedArray(size_t N)
+  : ptr(new T[N]), free_when_done(ptr, [](void *f) { delete [] reinterpret_cast<T*>(f); })
+  {}
+};
+
+py::array_t<double> linspace2(double a, double b, int N, bool transposed)
+{
+  AllocatedArray<double> result(N);
+
+  int i = 1;
+  for (int j = 0; j < N; j++) {
+    double f = i/double(2*N);
+    double x = (1-f)*a + f * b;
+    result.ptr[j] = x;
+    i += 2;
+  }
+
+  return py::array_t<double>(
+      {transposed ? N : 1, transposed ? 1 : N}, //shape
+      {sizeof(double), sizeof(double)}, // C-style contiguous strides for double
+      result.ptr, // the data pointer
+      result.free_when_done); // numpy array references this parent
+}
+
 PYBIND11_MODULE(chexutil, m) {
   m.doc() = R"(
 Classes and functions to deal with hexagonal grids.
@@ -937,6 +968,9 @@ swap x and y coordinates everywhere.
         "Given pixel coordinates x and y, get the hexagon under it.")
     .def("hexes_in_rectangle", &HexGrid::hexes_in_rectangle, py::arg("rectangle"),
         "Return a sequence with the hex coordinates in the rectangle.")
+    .def("xs", [](const HexGrid &hg) { return linspace2(-0.5, 0.5, 2*hg.width, false); })
+    .def("ys", [](const HexGrid &hg) { return linspace2(-HexGrid::hex_factor, HexGrid::hex_factor,
+          4*hg.height, true); })
     ;
 
     m.attr("hex_factor") = HexGrid::hex_factor;
