@@ -959,10 +959,13 @@ swap x and y coordinates everywhere.
     .def_readonly("width", &HexGrid::width)
     .def_readonly("height", &HexGrid::height)
     .def("center", &HexGrid::center,
+        py::arg("hexagon")=Hex(),
         "Get the center (as (x, y) tuple) of a hexagon.")
     .def("corners", &HexGrid::corners,
+        py::arg("hexagon")=Hex(),
         "Get the 6 corners (in pixel coordinates) of the hex.")
     .def("bounding_box", &HexGrid::bounding_box,
+        py::arg("hexagon")=Hex(),
         "Get the bounding box (as a Rectangle) of a hexagon.")
     .def("hex_at_coordinate", &HexGrid::hex_at_coordinate, py::arg("x"), py::arg("y"),
         "Given pixel coordinates x and y, get the hexagon under it.")
