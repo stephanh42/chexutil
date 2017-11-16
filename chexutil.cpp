@@ -553,13 +553,9 @@ if view_set.get(pos, 0) & light_set.get(pos, 0):
     # yes it is
 )";
 
-py::dict field_of_view(const Hex &hex, py::function transparent, int max_distance, py::object visible)
+py::object field_of_view(const Hex &hex, py::function transparent, int max_distance, py::object visible)
 {
   static FovTree fovtree(Hex(2, 0), 0, -1.0, 1.0);
-
-  bool new_dict = visible.is_none();
-  py::dict visible_dict = new_dict ? py::dict() : visible.cast<py::dict>();
-  py::function visible_get = visible_dict.attr("get").cast<py::function>();
 
   FovTree::VisibleMap visible_map;
   visible_map[hex] = FovTree::all_directions;
@@ -571,16 +567,23 @@ py::dict field_of_view(const Hex &hex, py::function transparent, int max_distanc
     fovtree.field_of_view(hex, direction, transparent_cache, max_distance, visible_map);  
   }
 
-  for (FovTree::VisibleMap::iterator it = visible_map.begin(); it != visible_map.end(); ++it) {
-    py::object pyhex = py::cast(it->first);
-    if (it->second == FovTree::all_directions) {
-      visible_dict[pyhex] = FovTree::all_directions;
-    } else {
-      visible_dict[pyhex] = it->second | (new_dict ? 0 : visible_get(pyhex, 0).cast<int>());
-    }
-  }
+  if (visible.is_none()) {
+    return py::cast(visible_map);
+  } else {
+    py::dict visible_dict = visible.cast<py::dict>();
+    py::function visible_get = visible_dict.attr("get").cast<py::function>();
 
-  return visible_dict;
+    for (FovTree::VisibleMap::iterator it = visible_map.begin(); it != visible_map.end(); ++it) {
+      py::object pyhex = py::cast(it->first);
+      if (it->second == FovTree::all_directions) {
+        visible_dict[pyhex] = FovTree::all_directions;
+      } else {
+        visible_dict[pyhex] = it->second | visible_get(pyhex, 0).cast<int>();
+      }
+    }
+
+    return visible_dict;
+  }
 }
 
 const char *HexPathFinder_doc =
