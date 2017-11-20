@@ -23,6 +23,17 @@ struct InvalidHex : public std::invalid_argument
   InvalidHex(const char *what) : std::invalid_argument(what) {}
 };
 
+template <class T>
+struct AllocatedArray
+{
+  T *ptr;
+  py::capsule free_when_done;
+
+  AllocatedArray(size_t N)
+  : ptr(new T[N]), free_when_done(ptr, [](void *f) { delete [] reinterpret_cast<T*>(f); })
+  {}
+};
+
 struct DivMod
 {
   int div;
@@ -59,6 +70,17 @@ RandomFunction make_random_function(py::object random)
     return RandomFunction([randrange](int n) { return randrange(0, py::cast(n)).cast<int>(); });
   }
 }
+
+const double hex_factor = std::sqrt(1.0/3.0);
+
+std::array<std::array<double, 2>, 6> origin_corner_coordinates = {{
+  {{0.5, 0.5*hex_factor}},
+  {{0.0, hex_factor}},
+  {{-0.5, 0.5*hex_factor}},
+  {{-0.5, -0.5*hex_factor}},
+  {{0.0, -hex_factor}},
+  {{0.5, -0.5*hex_factor}}
+}};
 
 class Hex {
   public:
@@ -153,6 +175,27 @@ class Hex {
       return Hex((x + 3 * y) >> 1, (y - x) >> 1);
     }
 
+    std::pair<double,double> center() const
+    {
+      static const double f = std::sqrt(0.75);
+      return std::pair<double, double>(0.5*x, f*y);
+    }
+
+    py::array_t<double> corners() const
+    {
+      std::pair<double,double> c = center();
+      AllocatedArray<double> result(2*6);
+      double *ptr = result.ptr;
+      for (size_t i = 0; i < 6; i++) {
+        ptr[2*i] = c.first + origin_corner_coordinates[i][0];
+        ptr[2*i+1] = c.second + origin_corner_coordinates[i][1];
+      }
+      return py::array_t<double>(
+          {6, 2}, // shape
+          {2*sizeof(double), sizeof(double)}, // C-style contiguous strides for double
+          ptr, // the data pointer
+          result.free_when_done); // numpy array references this parent
+    }
 };
 
 std::array<Hex, 6> Hex::orig_neighbours{{Hex{2, 0}, Hex{1, 1}, Hex{-1, 1}, Hex{-2, 0}, Hex{-1, -1}, Hex{1, -1}}};
@@ -342,8 +385,6 @@ std::array<Hex, 6> origin_corners = {{Hex(1, 1), Hex(0, 2), Hex(-1, 1), Hex(-1, 
 
 class HexGrid {
   public:
-    static const double hex_factor;
-
     HexGrid(int w, int h) : width(w), height(h) {}
     HexGrid(int w) : width(w), height(static_cast<int>(std::round(w * hex_factor))) {}
 
@@ -412,8 +453,6 @@ class HexGrid {
       return out.str();
     }
 };
-
-const double HexGrid::hex_factor = std::sqrt(1.0/3.0);
 
 py::tuple make_rotations()
 {
@@ -779,17 +818,6 @@ find_path(const Hex &start, const Hex &destination, py::function passable, py::o
   return pathFinder.path;
 }
 
-template <class T>
-struct AllocatedArray
-{
-  T *ptr;
-  py::capsule free_when_done;
-
-  AllocatedArray(size_t N)
-  : ptr(new T[N]), free_when_done(ptr, [](void *f) { delete [] reinterpret_cast<T*>(f); })
-  {}
-};
-
 py::array_t<double> linspace2(double a, double b, int N, bool transposed)
 {
   AllocatedArray<double> result(N);
@@ -816,6 +844,12 @@ Classes and functions to deal with hexagonal grids.
 This module assumes that the hexagonal grid is aligned with the x-axis.
 If you need it to be aligned with the y-axis instead, you will have to
 swap x and y coordinates everywhere.
+
+Constants:
+
+  hex_factor -- ⅓√3 ≈ 0.5773502691896257
+                Ratio between the length of the legs of 
+                the (right-angled) fundamental triangle.
 )";
 
   py::register_exception<InvalidHex>(m, "InvalidHex");
@@ -840,6 +874,10 @@ swap x and y coordinates everywhere.
         "Given a hex return the hex when rotated 60° counter-clock-wise around the origin.")
     .def("rotate_right", &Hex::rotate_right,
         "Given a hex return the hex when rotated 60° clock-wise around the origin.")
+    .def("center", &Hex::center,
+        "The (x,y) coordinates of the center in the unit hex grid.")
+    .def("corners", &Hex::corners,
+        "The (x,y) coordinates of the corners in the unit hex grid.")
     .def("random_neighbour", 
         [](const Hex &hex, py::object random) { return hex.random_neighbour(make_random_function(random)); },
         py::arg("random")=py::none(),
@@ -975,9 +1013,9 @@ swap x and y coordinates everywhere.
     .def("hexes_in_rectangle", &HexGrid::hexes_in_rectangle, py::arg("rectangle"),
         "Return a sequence with the hex coordinates in the rectangle.")
     .def("xs", [](const HexGrid &hg) { return linspace2(-0.5, 0.5, 2*hg.width, false); })
-    .def("ys", [](const HexGrid &hg) { return linspace2(-HexGrid::hex_factor, HexGrid::hex_factor,
+    .def("ys", [](const HexGrid &hg) { return linspace2(-hex_factor, hex_factor,
           4*hg.height, true); })
     ;
 
-    m.attr("hex_factor") = HexGrid::hex_factor;
+    m.attr("hex_factor") = hex_factor;
 }
