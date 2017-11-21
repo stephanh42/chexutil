@@ -211,6 +211,11 @@ class TestHexGrid(unittest.TestCase):
         self.assertEqual(hg.bounding_box(chexutil.Hex(0,2)),
                 chexutil.Rectangle(-32, 72, 64, 72))
 
+    def test_tile(self):
+        hg = chexutil.HexGrid(32)
+        self.assertEqual(hg.tile(),
+                chexutil.Rectangle(0, 0, 64, 108))
+ 
     def test_hexes_in_rectangle(self):
         hg = chexutil.HexGrid(32)
         self.assertEqual(

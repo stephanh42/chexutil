@@ -404,6 +404,12 @@ class HexGrid {
         return Rectangle(c.first - width, c.second - 2*height, 2*width, 4*height);
     }
 
+    // Get the periodic tile
+    Rectangle tile() const
+    {
+      return Rectangle(0, 0, 2*width, 6*height);
+    }
+
     py::list corners(const Hex &hex) const
     {
       py::list result;
@@ -837,6 +843,20 @@ py::array_t<double> linspace2(double a, double b, int N, bool transposed)
       result.free_when_done); // numpy array references this parent
 }
 
+const char *pixel_coordinates_doc = R"(
+The purpose of this function is to create procedural
+images using Numpy.
+
+Let W and H be the width and height of input rectangle.
+Then this function returns a pair of arrays, of
+shape 1xW and Hx1, respectively, with equally-spaced
+numbers.
+
+These are the x and y coordinates of the points in
+the unit hex grid corresponding to each pixel of 
+the rectangle.
+)";
+
 PYBIND11_MODULE(chexutil, m) {
   m.doc() = R"(
 Classes and functions to deal with hexagonal grids.
@@ -1008,13 +1028,19 @@ Constants:
     .def("bounding_box", &HexGrid::bounding_box,
         py::arg("hexagon")=Hex(),
         "Get the bounding box (as a Rectangle) of a hexagon.")
+    .def("tile", &HexGrid::tile,
+       "Get the periodic tile (as a Rectangle.")
     .def("hex_at_coordinate", &HexGrid::hex_at_coordinate, py::arg("x"), py::arg("y"),
         "Given pixel coordinates x and y, get the hexagon under it.")
     .def("hexes_in_rectangle", &HexGrid::hexes_in_rectangle, py::arg("rectangle"),
         "Return a sequence with the hex coordinates in the rectangle.")
-    .def("xs", [](const HexGrid &hg) { return linspace2(-0.5, 0.5, 2*hg.width, false); })
-    .def("ys", [](const HexGrid &hg) { return linspace2(-hex_factor, hex_factor,
-          4*hg.height, true); })
+    .def("pixel_coordinates", [](const HexGrid &hg, const Rectangle &rect) { 
+        const double x_factor = 0.5/hg.width;
+        const double y_factor = (0.5 * hex_factor)/hg.height;
+        return std::make_tuple(
+            linspace2(x_factor * rect.x, x_factor * rect.x2(), rect.width, false),
+            linspace2(y_factor * rect.y, y_factor * rect.y2(), rect.height, true)); 
+        }, pixel_coordinates_doc)
     ;
 
     m.attr("hex_factor") = hex_factor;
